@@ -25,15 +25,17 @@
     const API_KEY = 'AIzaSyBtb9gT9OMJ1JiWGKZ1kopdr22RKchIs2M';
     const SHEET_NAME = 'Data';
 
-    function loadClient() {
-      gapi.client.init({ apiKey: API_KEY }).then(() => {
-        console.log('GAPI client loaded.');
-      }, (error) => {
-        console.error('GAPI client failed to load.', error);
+    // Load GAPI
+    gapi.load('client', () => {
+      gapi.client.init({
+        apiKey: API_KEY,
+        discoveryDocs: ["https://sheets.googleapis.com/$discovery/rest?version=v4"]
+      }).then(() => {
+        console.log('GAPI client initialized');
+      }).catch(err => {
+        console.error('GAPI init error', err);
       });
-    }
-
-    gapi.load('client', loadClient);
+    });
 
     function validatePhone(phone) {
       return /^\d{10,15}$/.test(phone);
@@ -41,27 +43,48 @@
 
     async function fetchData(phone) {
       try {
-        const response = await gapi.client.request({
-          path: `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${SHEET_NAME}`
+        const response = await gapi.client.sheets.spreadsheets.values.get({
+          spreadsheetId: SHEET_ID,
+          range: SHEET_NAME
         });
+
         const rows = response.result.values;
         if (!rows || rows.length === 0) return null;
 
         const headers = rows[0];
-        const found = rows.slice(1).find(row => row[0] === phone);
+        const matchedRow = rows.slice(1).find(row => row[0] === phone);
 
-        if (found) {
-          const data = {};
-          headers.forEach((header, index) => {
-            data[header] = found[index] || '';
-          });
-          return data;
-        } else {
-          return null;
-        }
+        if (!matchedRow) return null;
+
+        const data = {};
+        headers.forEach((header, index) => {
+          data[header] = matchedRow[index] || '';
+        });
+        return data;
       } catch (error) {
-        console.error('Error fetching data', error);
+        console.error('Fetch error', error);
         return null;
+      }
+    }
+
+    async function lookupData() {
+      const phone = document.getElementById('phoneNumber').value.trim();
+      const resultDiv = document.getElementById('resultData');
+
+      if (!validatePhone(phone)) {
+        resultDiv.innerHTML = '<p class="text-red-500">Nomor tidak valid (10–15 digit)</p>';
+        return;
+      }
+
+      resultDiv.innerHTML = '<p class="text-blue-500 animate-pulse">Mencari data...</p>';
+
+      const data = await fetchData(phone);
+      if (data) {
+        resultDiv.innerHTML = Object.entries(data)
+          .map(([key, val]) => `<div><strong>${key}</strong>: ${val}</div>`)
+          .join('');
+      } else {
+        resultDiv.innerHTML = '<p class="text-red-500">Data tidak ditemukan</p>';
       }
     }
 
@@ -71,26 +94,6 @@
         await lookupData();
       }
     });
-
-    async function lookupData() {
-      const phone = document.getElementById('phoneNumber').value.trim();
-      const resultDiv = document.getElementById('resultData');
-
-      if (!validatePhone(phone)) {
-        resultDiv.innerHTML = '<p class="text-red-500">Nomor tidak valid (10-15 digit)</p>';
-        return;
-      }
-
-      resultDiv.innerHTML = '<p class="text-blue-500 animate-pulse">Mencari data...</p>';
-
-      const data = await fetchData(phone);
-
-      if (data) {
-        resultDiv.innerHTML = Object.entries(data).map(([key, value]) => `<div><strong>${key}</strong>: ${value}</div>`).join('');
-      } else {
-        resultDiv.innerHTML = '<p class="text-red-500">Data tidak ditemukan</p>';
-      }
-    }
 
     function resetForm() {
       document.getElementById('phoneNumber').value = '';
